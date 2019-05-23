@@ -30,6 +30,9 @@ type Schedule interface {
 	// Return the next activation time, later than the given time.
 	// Next is invoked initially, and then each time the job is run.
 	Next(time.Time) time.Time
+
+	// Return the previous activation time, before than the given time.
+	Prev(time.Time) time.Time
 }
 
 // Entry consists of a schedule and the func to execute on that schedule.

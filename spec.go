@@ -1,6 +1,8 @@
 package cron
 
-import "time"
+import (
+	"time"
+)
 
 // SpecSchedule specifies a duty cycle (to the second granularity), based on a
 // traditional crontab specification. It is computed initially and stored as bit sets.
@@ -155,4 +157,102 @@ func dayMatches(s *SpecSchedule, t time.Time) bool {
 		return domMatch && dowMatch
 	}
 	return domMatch || dowMatch
+}
+
+// Prev returns the previous time this schedule is activated, lesser than the given
+// time.  If no time can be found to satisfy the schedule, return the zero time.
+func (s *SpecSchedule) Prev(t time.Time) time.Time {
+	if t.IsZero() {
+		return time.Time{}
+	}
+
+	// Start at the earliest possible time (the upcoming second).
+	t = t.Add(-1*time.Second + time.Duration(t.Nanosecond())*time.Nanosecond)
+
+	// This flag indicates whether a field has been incremented.
+	added := false
+
+	// If no time is found within five years, return zero.
+	yearLimit := t.Year() - 5
+
+	dt := t // copy
+WRAP:
+	if t.Year() < yearLimit {
+		return time.Time{}
+	}
+
+	// Find the first applicable month.
+	// If it's this month, then do nothing.
+	for 1<<uint(t.Month())&s.Month == 0 {
+		t = time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, t.Location()) // place cursor on begging of month
+		t = t.Add(-1 * time.Second)                                     // then subtract one second to spin on month
+
+		// Wrapped around.
+		if t.Year() != dt.Year() {
+			goto WRAP
+		}
+	}
+
+	// Now get a day in that month.
+	dt = t
+	for !dayMatches(s, t) {
+		if !added {
+			added = true
+			t = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+			t = t.Add(-1 * time.Second)
+		} else {
+			t = t.AddDate(0, 0, -1)
+		}
+
+		if t.Month() != dt.Month() {
+			goto WRAP
+		}
+	}
+
+	dt = t
+	for 1<<uint(t.Hour())&s.Hour == 0 {
+		if !added {
+			added = true
+			t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), 0, 0, 0, t.Location())
+			t = t.Add(-1 * time.Second)
+		} else {
+			t = t.Add(-1 * time.Hour)
+		}
+
+		if t.Day() != dt.Day() {
+			goto WRAP
+		}
+	}
+
+	dt = t
+	for 1<<uint(t.Minute())&s.Minute == 0 {
+		if !added {
+			added = true
+			t = t.Round(time.Minute)
+			t = t.Add(-1 * time.Second)
+		} else {
+			t = t.Add(-1 * time.Minute)
+		}
+
+		if t.Hour() != dt.Hour() {
+			goto WRAP
+		}
+	}
+
+	dt = t
+	for 1<<uint(t.Second())&s.Second == 0 {
+		if !added {
+			added = true
+			t = t.Round(time.Second)
+			t = t.Add(-1 * time.Second)
+		} else {
+			t = t.Add(-1 * time.Second)
+		}
+
+		if t.Minute() != dt.Minute() {
+			goto WRAP
+		}
+	}
+
+	return t
 }
